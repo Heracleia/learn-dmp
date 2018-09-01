@@ -5,11 +5,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+from keras.models import load_model
+
 mat = scipy.io.loadmat('DMP_3.mat')
-q = mat['DMP'][0][0][0]
-p = mat['DMP'][0][0][1]
+#q = mat['DMP'][0][0][0]
+#p = mat['DMP'][0][0][1]
 target = np.concatenate(mat['DMP'][0][0][2])
-time = np.concatenate(mat['DMP'][0][0][3])
+#time = np.concatenate(mat['DMP'][0][0][3])
+
+data = np.loadtxt('data_collector/demo1.txt', skiprows = 1, delimiter = ',')
+
+q = np.array(data[:,1:8])
+target = q[-1]
+q = q[:-1]
+time = data[:-1, 0]
 
 def psiF(h, c, s, i):
     return np.exp(-h[i]*(s-c[i])**2)
@@ -29,7 +38,7 @@ def DynamicMotionPrimitive(x, time, convert, target):
     par['ng'] = 100
     par['h'] = np.concatenate(np.ones((1, par['ng'])) * h)
     par['s'] = 1
-    par['as'] = 1
+    par['as'] = 5
     par['tau'] = time[-1]
     par['K'] = 10000
     par['D'] = 100
@@ -127,6 +136,37 @@ def DynamicMotionPrimitive(x, time, convert, target):
     return results
 
 
+fm = load_model('models/fm.h5')
+
+
+p = fm.predict(q)
+
+print(q.shape)
+print(p.shape)
+print(target.shape)
+print(time.shape)
+DMP_res = []
+for i in range(0, 1):
+    temp = []
+    for j in range(0, len(q[0])):
+        targ = target[j]
+        result = DynamicMotionPrimitive(q[:, j], time, 1000, targ)
+        # TODO: missing line temp(:,j) = results['y_xr
+        DMP_res.append(result['y_xr'])  # changed bc missing above line
+
+DMP_res = np.array(DMP_res)
+#print(DMP_res.shape)
+    
+    
+cart = fm.predict(np.squeeze(DMP_res).T)       
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(p[:,0], p[:,1], p[:,2], 'b')
+ax.scatter(cart[0], cart[1], cart[2], 'r')
+plt.show()
+
+"""
 DMP_res = []
 
 for i in range(0, 1):
@@ -142,4 +182,4 @@ fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.scatter(p[:,0], p[:,1], p[:,2], 'b')
 ax.scatter(DMP_res[0], DMP_res[1], DMP_res[2], 'r')
-plt.show()
+plt.show()"""
