@@ -166,7 +166,7 @@ ax.scatter(p[:,0], p[:,1], p[:,2], 'b')
 ax.scatter(cart[0], cart[1], cart[2], 'r')
 plt.show()
 
-"""
+
 DMP_res = []
 
 for i in range(0, 1):
@@ -182,4 +182,4 @@ fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.scatter(p[:,0], p[:,1], p[:,2], 'b')
 ax.scatter(DMP_res[0], DMP_res[1], DMP_res[2], 'r')
-plt.show()"""
+plt.show()
