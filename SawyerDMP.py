@@ -37,93 +37,50 @@ FONTFACE = cv2.FONT_HERSHEY_SIMPLEX
 FONTSCALE = 1
 FONTCOLOR = (255, 255, 255)
 
-def transform(x_p,y_p,x_robot,y_robot,x_image,y_image):
 
-    a_y=(y_robot[0]-y_robot[1])/(y_image[1]-y_image[0])
-    b_y=y_robot[1]-a_y*y_image[0]
-    y_r=a_y*y_p+b_y
+# Camera calibration values - Specific to C930e 
+CAMERAMATRIX = np.array([[506.857008, 0.000000, 311.541447], 
+                         [0.000000, 511.072198, 257.798417], 
+                         [0.000000, 0.000000, 1.000000]])
+DISTORTION = np.array([0.047441, -0.104070, 0.006161, 0.000338, 0.000000])
+
+CARTIM = [[170, 446], [196, 380]] # [[XX],[YY]] of the calibration points on table
+CARTBOT = [[-0.3,0.3], [-0.4,-0.8]] # [[XX],[YY]] for the cartesian EE table values
+
+# Filters blocks out of image and returns a list of x-y pairs in relation to the end-effector
+def detectBlock(cap):
+    for i in range(5): cap.grab() # Disregard old frames
+
+    ret_val, im = cap.read()
+    while not ret_val: # In case an image is not captured
+        ret_val, im = cap.read()
+
+    und_im = cv2.undistort(im, CAMERAMATRIX, DISTORTION) # Remove distortions
+    imHSV = cv2.cvtColor(und_im, cv2.COLOR_BGR2HSV)
+        
+    mask = cv2.inRange(imHSV, BLUELOWER, BLUEUPPER) # Masking out blue cylinders
+    mask_open = cv2.morphologyEx(mask, cv2.MORPH_OPEN, KERNELOPEN)
+    mask_close = cv2.morphologyEx(mask_open, cv2.MORPH_CLOSE, KERNELCLOSE)
     
-    a_x=(x_robot[0]-x_robot[1])/(x_image[1]-x_image[0])
-    b_x=x_robot[1]-a_x*x_image[0]
-    x_r=a_x*x_p+b_x
+    _, conts, h = cv2.findContours(mask_close.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cv2.drawContours(und_im, conts, -1, (255, 255, 0), 1) # Helpful for visualization
+        
+    centers = [getCenter(*cv2.boundingRect(c)) for c in conts] # Calc center of each cylinder
+    return [pixelsToCartesian(*c) for c in centers] # Return centers (in cartesian instead of pixels)
 
-    return [x_r,y_r]
+# Takes pixel representation of table/centroids and converts it to cartesian space
+# (in reference to robot end-effector). Originally by Michail Theofanidis, adapted by Joe Cloud
+def pixelsToCartesian(cx, cy):
+    a_y = (CARTBOT[1][0]-CARTBOT[1][1])/(CARTIM[1][1]-CARTIM[1][0])
+    b_y = CARTBOT[1][1]-a_y*CARTIM[1][0]
+    y = a_y*cy+b_y
+    a_x = (CARTBOT[0][0]-CARTBOT[0][1])/(CARTIM[0][1]-CARTIM[0][0])
+    b_x = CARTBOT[0][1]-a_x*CARTIM[0][0]
+    x = a_x*cx+b_x
+    return (x,y)
 
-def detection():
-
-    cam = cv2.VideoCapture(-1)
-
-    print(cam.isOpened())
-
-    cameraMatrix=np.array([[808.615274, 0.000000, 618.694898],[0.000000,803.883580,356.546277],[0.000000,0.000000,1.000000]])
-    distCoeffs=np.array([0.070456,-0.128921,-0.000695,-0.003474,0.000000])
-
-    y_robot=[-0.4,-0.8]
-    y_image=[202,388]
-
-    x_robot=[-0.3,0.3]
-    x_image=[194,468]
-    
-    positions=[]
-    
-    for i in range(5):
-
-    	ret_val,img = cam.read()
-        if not ret_val: continue
-    	height, width, channels = img.shape
-
-        und_img=cv2.undistort(img,cameraMatrix,distCoeffs)
-
-        cv2.line(und_img,(x_image[1],y_image[0]),(x_image[0],y_image[0]),(0,0,255),1)
-        cv2.line(und_img,(x_image[0],y_image[0]),(x_image[0],y_image[1]),(0,0,255),1)
-        cv2.line(und_img,(x_image[0],y_image[1]),(x_image[1],y_image[1]),(0,0,255),1)
-        cv2.line(und_img,(x_image[1],y_image[1]),(x_image[1],y_image[0]),(0,0,255),1)
-
-        # Convert image to HSV
-        imHSV = cv2.cvtColor(und_img, cv2.COLOR_BGR2HSV)
-
-        # Threshold the colors  
-        mask_blue = cv2.inRange(imHSV, BLUELOWER, BLUEUPPER)
-        mask_blue_open = cv2.morphologyEx(mask_blue, cv2.MORPH_OPEN, KERNELOPEN)
-        mask_blue_close = cv2.morphologyEx(mask_blue_open, cv2.MORPH_CLOSE, KERNELCLOSE)
-
-        #cv2.imshow('Camera', mask_blue_close)
-
-        _, conts, hierarchy = cv2.findContours(mask_blue_close,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-
-        # Hold the centers of the detected objects
-        location=[]
-
-
-        # loop over the contours
-        for c in conts:
-
-            # compute the center of the contour
-            M = cv2.moments(c)
-            cX = int(M["m10"] / M["m00"])
-            cY = int(M["m01"] / M["m00"])
-            
-            #cv2.drawContours(mask_blue_open, conts, -1, (0, 0, 255), 2)
-            cv2.circle(und_img, (cX, cY), 1, (0, 0, 255), -1)
-
-            location.append([cX, cY])
-            
-        #cv2.imshow('Camera2', und_img)
-
-        #print location
-
-        for c in location:
-
-            dummy=transform(c[0],c[1],x_robot,y_robot,x_image,y_image)
-            positions.append(dummy)
-
-     	print positions
-        if cv2.waitKey(1) == 27: 
-            break  # esc to quit
-
-    #cv2.destroyAllWindows()
-
-    return positions
+def getCenter(x, y, w, h):
+    return (((int)(x + 0.5*w)), ((int)(y + 0.5*h)))
 
 def psiF(h, c, s, i):
     return np.exp(-h[i]*(s-c[i])**2)
@@ -319,9 +276,13 @@ angles['right_j5']=math.radians(0)
 angles['right_j6']=math.radians(0)
 limb.move_to_joint_positions(angles)
 
+cap = cv2.VideoCapture(-1)
+if not cap.isOpened():
+    exit(1)
+
 #Get the position of the cube
 print 'Aquiring Target'
-target=detection()
+target=blocks = detectBlock(cap)
 #target=[[0.2627737226277372, -0.6752688172043011]]
 print 'Target found at:'
 target=np.array([target[0][0],target[0][1],-0.04])
